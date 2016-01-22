@@ -10,6 +10,8 @@ EXPORTED_FUNCTION void mexRfInitialize(const mxArray *mxA, const mxArray *mxL,
                                        const mxArray *mxU, const mxArray *mxP,
                                        const mxArray *mxQ);
 
+EXPORTED_FUNCTION void mexRfDestroy(void);
+
 EXPORTED_FUNCTION void mexFunction(int nlhs, mxArray *plhs[],
                                    int nrhs, const mxArray *prhs[]);
 

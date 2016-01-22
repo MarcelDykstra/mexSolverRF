@@ -68,6 +68,11 @@ EXPORTED_FUNCTION void mexRfInitialize(const mxArray *mxA, const mxArray *mxL,
   delete_int_vector(vctQ);
 }
 
+//------------------------------------------------------------------------------
+EXPORTED_FUNCTION void mexRfDestroy(void)
+{
+  check_rf_status(cusolverRfDestroy(cuRFh));
+}
 
 //------------------------------------------------------------------------------
 void check_rf_status(cusolverStatus_t status)
