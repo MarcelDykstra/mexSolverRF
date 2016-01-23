@@ -7,8 +7,11 @@ classdef mexRF < handle
       [L, U, p, q] = lu(A, 'vector');
       calllib('mex_rf', 'mexRfInitialize', A', L', U', p', q');
     end
+    function refactor(self, A)
+      calllib('mex_rf', 'mexRfRefactor', A');
+    end
     function delete(self)
-      calllib('mex_rf','mexRfDestroy');
+      calllib('mex_rf', 'mexRfDestroy');
       unloadlibrary('mex_rf');
     end
   end
