@@ -24,6 +24,11 @@ typedef struct {
   int *val;
 } intVct;
 
+typedef struct {
+  int n;
+  double *val;
+} doubleVct;
+
 void check_rf_status(cusolverStatus_t status);
 void check_cuda_status(cudaError_t status);
 void create_csr_matrix(const mxArray *mxA, csrMtx *csrA);
@@ -34,6 +39,9 @@ void create_int_vector(const mxArray *mxA, intVct *vctA);
 void gpu_create_int_vector(intVct vctA, intVct *gpu_vctA);
 void delete_int_vector(intVct vctA);
 void gpu_delete_int_vector(intVct gpu_vctA);
+void gpu_create_double_vector(const mxArray *mxA, doubleVct *vctA);
+void gpu_delete_double_vector(doubleVct gpu_vctA);
+void mex_create_double_vector(doubleVct gpu_vctA, mxArray **mxA);
 
 //------------------------------------------------------------------------------
 // Library handles.
@@ -63,12 +71,17 @@ EXPORTED_FUNCTION void mexRfInitialize(const mxArray *mxA, const mxArray *mxL,
   gpu_create_int_vector(vctQ, &gpu_vctQ);
 
   check_rf_status(cusolverRfCreate(&cuRFh));
+  check_rf_status(cusolverRfSetMatrixFormat(cuRFh,
+                  CUSOLVERRF_MATRIX_FORMAT_CSC,
+                  CUSOLVERRF_UNIT_DIAGONAL_STORED_L));
+  //check_rf_status(cusolverRfSetResetValuesFastMode(cuRFh,
+  //                CUSOLVERRF_RESET_VALUES_FAST_MODE_ON));
 
   check_rf_status(cusolverRfSetupHost(csrA.n,
-                 csrA.nnz, csrA.row_idx, csrA.col_idx, csrA.val,
-                 csrL.nnz, csrL.row_idx, csrL.col_idx, csrL.val,
-                 csrU.nnz, csrU.row_idx, csrU.col_idx, csrL.val,
-                 vctP.val, vctQ.val, cuRFh));
+                  csrA.nnz, csrA.row_idx, csrA.col_idx, csrA.val,
+                  csrL.nnz, csrL.row_idx, csrL.col_idx, csrL.val,
+                  csrU.nnz, csrU.row_idx, csrU.col_idx, csrL.val,
+                  vctP.val, vctQ.val, cuRFh));
   check_cuda_status(cudaDeviceSynchronize());
 
   check_rf_status(cusolverRfAnalyze(cuRFh));
@@ -99,6 +112,27 @@ EXPORTED_FUNCTION void mexRfRefactor(const mxArray *mxA)
 
   gpu_delete_csr_matrix(gpu_csrA);
   delete_csr_matrix(csrA);
+}
+
+//------------------------------------------------------------------------------
+EXPORTED_FUNCTION mxArray *mexRfSolve(const mxArray *mxA)
+{
+  doubleVct gpu_vctXF;
+  double *gpu_temp;
+  mxArray *mxX;
+
+  gpu_create_double_vector(mxA, &gpu_vctXF);
+  cudaMalloc((void **) &gpu_temp, sizeof(double) * gpu_vctXF.n);
+
+  check_rf_status(cusolverRfSolve(cuRFh, gpu_vctP.val, gpu_vctQ.val, 1,
+                  gpu_temp, gpu_vctXF.n, gpu_vctXF.val, gpu_vctXF.n));
+  check_cuda_status(cudaDeviceSynchronize());
+
+  mex_create_double_vector(gpu_vctXF, &mxX);
+
+  cudaFree(gpu_temp);
+  gpu_delete_double_vector(gpu_vctXF);
+  return mxX;
 }
 
 //------------------------------------------------------------------------------
@@ -156,7 +190,7 @@ void create_csr_matrix(const mxArray *mxA, csrMtx *csrA)
   jc = mxGetJc(mxA);
   ir = mxGetIr(mxA);
   csrA->val = mxGetPr(mxA);
-  csrA->nnz = jc[csrA->n];
+  csrA->nnz = (int) jc[csrA->n];
 
   // Cast array from 'mwIndex' to 'int'.
   csrA->row_idx = new int[csrA->n + 1];
@@ -177,14 +211,14 @@ void gpu_create_csr_matrix(csrMtx csrA, csrMtx *gpu_csrA)
   gpu_csrA->n = csrA.n;
   gpu_csrA->nnz = csrA.nnz;
   cudaMalloc((void **) &(gpu_csrA->row_idx), sizeof(int) * (gpu_csrA->n + 1));
-  cudaMemcpy(csrA.row_idx, gpu_csrA->row_idx, sizeof(int) * (gpu_csrA->n + 1),
-             cudaMemcpyDeviceToHost);
+  cudaMemcpy(gpu_csrA->row_idx, csrA.row_idx, sizeof(int) * (gpu_csrA->n + 1),
+             cudaMemcpyHostToDevice);
   cudaMalloc((void **) &(gpu_csrA->col_idx), sizeof(int) * gpu_csrA->nnz);
-  cudaMemcpy(csrA.col_idx, gpu_csrA->col_idx, sizeof(int) * gpu_csrA->nnz,
-             cudaMemcpyDeviceToHost);
+  cudaMemcpy(gpu_csrA->col_idx, csrA.col_idx, sizeof(int) * gpu_csrA->nnz,
+             cudaMemcpyHostToDevice);
   cudaMalloc((void **) &(gpu_csrA->val), sizeof(double) * gpu_csrA->nnz);
-  cudaMemcpy(csrA.val, gpu_csrA->val, sizeof(double) * gpu_csrA->nnz,
-             cudaMemcpyDeviceToHost);
+  cudaMemcpy(gpu_csrA->val, csrA.val, sizeof(double) * gpu_csrA->nnz,
+             cudaMemcpyHostToDevice);
 }
 
 //------------------------------------------------------------------------------
@@ -229,8 +263,8 @@ void gpu_create_int_vector(intVct vctA, intVct *gpu_vctA)
 {
   gpu_vctA->n = vctA.n;
   cudaMalloc((void **) &(gpu_vctA->val), sizeof(int) * gpu_vctA->n);
-  cudaMemcpy(vctA.val, gpu_vctA->val, sizeof(int) * gpu_vctA->n,
-             cudaMemcpyDeviceToHost);
+  cudaMemcpy(gpu_vctA->val, vctA.val, sizeof(int) * gpu_vctA->n,
+             cudaMemcpyHostToDevice);
 }
 
 //------------------------------------------------------------------------------
@@ -246,8 +280,46 @@ void gpu_delete_int_vector(intVct gpu_vctA)
 }
 
 //------------------------------------------------------------------------------
+void gpu_create_double_vector(const mxArray *mxA, doubleVct *gpu_vctA)
+{
+  doubleVct vctA;
+
+  vctA.n = mxGetM(mxA);
+  vctA.val = mxGetPr(mxA);
+
+  if (mxIsSparse(mxA) || mxGetN(mxA) != 1 || vctA.n == 0 ||
+      mxIsComplex(mxA) ||!mxIsDouble(mxA)) {
+    mexErrMsgTxt("mexRF: Bad vector.");
+  }
+
+  gpu_vctA->n = vctA.n;
+  cudaMalloc((void **) &(gpu_vctA->val), sizeof(double) * gpu_vctA->n);
+  cudaMemcpy(gpu_vctA->val, vctA.val, sizeof(double) * gpu_vctA->n,
+             cudaMemcpyHostToDevice);
+}
+
+//------------------------------------------------------------------------------
+void gpu_delete_double_vector(doubleVct gpu_vctA)
+{
+  cudaFree(gpu_vctA.val);
+}
+
+//------------------------------------------------------------------------------
+void mex_create_double_vector(doubleVct gpu_vctA, mxArray **mxA)
+{
+  double *val;
+
+  *mxA = mxCreateNumericMatrix(gpu_vctA.n, 1, mxDOUBLE_CLASS, mxREAL);
+  val = (double *) mxMalloc(sizeof(double) * gpu_vctA.n);
+  cudaMemcpy(val, gpu_vctA.val, sizeof(double) * gpu_vctA.n,
+             cudaMemcpyDeviceToHost);
+
+  mxSetPr(*mxA, val);
+}
+
+//------------------------------------------------------------------------------
 void mexFunction(int nlhs, mxArray * plhs[],
-                 int nrhs,const mxArray * prhs[])
+                 int nrhs, const mxArray * prhs[])
 {
   mexPrintf("mexRF: Use loadlibrary.\n");
   return;

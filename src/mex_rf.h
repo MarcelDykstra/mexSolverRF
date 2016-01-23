@@ -12,6 +12,8 @@ EXPORTED_FUNCTION void mexRfInitialize(const mxArray *mxA, const mxArray *mxL,
 
 EXPORTED_FUNCTION void mexRfRefactor(const mxArray *mxA);
 
+EXPORTED_FUNCTION mxArray *mexRfSolve(const mxArray *mxA);
+
 EXPORTED_FUNCTION void mexRfDestroy(void);
 
 EXPORTED_FUNCTION void mexFunction(int nlhs, mxArray *plhs[],
