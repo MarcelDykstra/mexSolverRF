@@ -4,7 +4,7 @@ classdef mexRF < handle
       warn = warning('off', 'all');
       loadlibrary('mex_rf', @mex_rf_proto);
       warning(warn);
-      [L, U, p, q] = lu(A', 'vector');
+      [L, U, p, q] = lu(A, 'vector');
       calllib('mex_rf', 'mexRfInitialize', A, L, U, p', q');
     end
     function refactor(self, A)

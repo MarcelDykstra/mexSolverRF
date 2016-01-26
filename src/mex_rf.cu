@@ -80,7 +80,7 @@ EXPORTED_FUNCTION void mexRfInitialize(const mxArray *mxA, const mxArray *mxL,
   check_rf_status(cusolverRfSetupHost(csrA.n,
                   csrA.nnz, csrA.row_idx, csrA.col_idx, csrA.val,
                   csrL.nnz, csrL.row_idx, csrL.col_idx, csrL.val,
-                  csrU.nnz, csrU.row_idx, csrU.col_idx, csrL.val,
+                  csrU.nnz, csrU.row_idx, csrU.col_idx, csrU.val,
                   vctP.val, vctQ.val, cuRFh));
   check_cuda_status(cudaDeviceSynchronize());
 
@@ -122,7 +122,8 @@ EXPORTED_FUNCTION mxArray *mexRfSolve(const mxArray *mxA)
   mxArray *mxX;
 
   gpu_create_double_vector(mxA, &gpu_vctXF);
-  cudaMalloc((void **) &gpu_temp, sizeof(double) * gpu_vctXF.n);
+  check_cuda_status(cudaMalloc((void **) &gpu_temp,
+                    sizeof(double) * gpu_vctXF.n));
 
   check_rf_status(cusolverRfSolve(cuRFh, gpu_vctP.val, gpu_vctQ.val, 1,
                   gpu_temp, gpu_vctXF.n, gpu_vctXF.val, gpu_vctXF.n));
@@ -130,7 +131,7 @@ EXPORTED_FUNCTION mxArray *mexRfSolve(const mxArray *mxA)
 
   mex_create_double_vector(gpu_vctXF, &mxX);
 
-  cudaFree(gpu_temp);
+  check_cuda_status(cudaFree(gpu_temp));
   gpu_delete_double_vector(gpu_vctXF);
   return mxX;
 }
@@ -149,18 +150,25 @@ void check_rf_status(cusolverStatus_t status)
   switch (status) {
     case CUSOLVER_STATUS_NOT_INITIALIZED:
       mexErrMsgTxt("mexRF: Library not initialised.\n");
+    break;
     case CUSOLVER_STATUS_INVALID_VALUE:
       mexErrMsgTxt("mexRF: Unsupported value or parameter was passed.\n");
+    break;
     case CUSOLVER_STATUS_ALLOC_FAILED:
       mexErrMsgTxt("mexRF: Allocation of memory failed.\n");
+    break;
     case CUSOLVER_STATUS_EXECUTION_FAILED:
       mexErrMsgTxt("mexRF: Kernel failed to launch on the GPU.\n");
+    break;
     case CUSOLVER_STATUS_INTERNAL_ERROR:
       mexErrMsgTxt("mexRF: Internal operation failed.\n");
+    break;
     case CUSOLVER_STATUS_ARCH_MISMATCH:
       mexErrMsgTxt("mexRF: Device compute capability mismatch.\n");
+    break;
     case CUSOLVER_STATUS_MATRIX_TYPE_NOT_SUPPORTED:
       mexErrMsgTxt("mexRF: Matrix type not supported.\n");
+    break;
   }
 }
 
@@ -184,7 +192,7 @@ void create_csr_matrix(const mxArray *mxA, csrMtx *csrA)
   csrA->n = mxGetM(mxA);
   if (!mxIsSparse(mxA) || mxGetN(mxA) != mxGetM(mxA) ||
       csrA->n == 0 || mxIsComplex(mxA) || !mxIsDouble(mxA)) {
-    mexErrMsgTxt("mexRF: Bad matrix.");
+    mexErrMsgTxt("mexRF: Matrix dimensions and type must agree.");
   }
 
   jc = mxGetJc(mxA);
@@ -210,15 +218,21 @@ void gpu_create_csr_matrix(csrMtx csrA, csrMtx *gpu_csrA)
 {
   gpu_csrA->n = csrA.n;
   gpu_csrA->nnz = csrA.nnz;
-  cudaMalloc((void **) &(gpu_csrA->row_idx), sizeof(int) * (gpu_csrA->n + 1));
-  cudaMemcpy(gpu_csrA->row_idx, csrA.row_idx, sizeof(int) * (gpu_csrA->n + 1),
-             cudaMemcpyHostToDevice);
-  cudaMalloc((void **) &(gpu_csrA->col_idx), sizeof(int) * gpu_csrA->nnz);
-  cudaMemcpy(gpu_csrA->col_idx, csrA.col_idx, sizeof(int) * gpu_csrA->nnz,
-             cudaMemcpyHostToDevice);
-  cudaMalloc((void **) &(gpu_csrA->val), sizeof(double) * gpu_csrA->nnz);
-  cudaMemcpy(gpu_csrA->val, csrA.val, sizeof(double) * gpu_csrA->nnz,
-             cudaMemcpyHostToDevice);
+  check_cuda_status(cudaMalloc((void **) &(gpu_csrA->row_idx),
+                    sizeof(int) * (gpu_csrA->n + 1)));
+  check_cuda_status(cudaMemcpy(gpu_csrA->row_idx, csrA.row_idx,
+                    sizeof(int) * (gpu_csrA->n + 1),
+                    cudaMemcpyHostToDevice));
+  check_cuda_status(cudaMalloc((void **) &(gpu_csrA->col_idx),
+                    sizeof(int) * gpu_csrA->nnz));
+  check_cuda_status(cudaMemcpy(gpu_csrA->col_idx, csrA.col_idx,
+                    sizeof(int) * gpu_csrA->nnz,
+                    cudaMemcpyHostToDevice));
+  check_cuda_status(cudaMalloc((void **) &(gpu_csrA->val),
+                    sizeof(double) * gpu_csrA->nnz));
+  check_cuda_status(cudaMemcpy(gpu_csrA->val, csrA.val,
+                    sizeof(double) * gpu_csrA->nnz,
+                    cudaMemcpyHostToDevice));
 }
 
 //------------------------------------------------------------------------------
@@ -231,9 +245,9 @@ void delete_csr_matrix(csrMtx csrA)
 //------------------------------------------------------------------------------
 void gpu_delete_csr_matrix(csrMtx gpu_csrA)
 {
-  cudaFree(gpu_csrA.row_idx);
-  cudaFree(gpu_csrA.col_idx);
-  cudaFree(gpu_csrA.val);
+  check_cuda_status(cudaFree(gpu_csrA.row_idx));
+  check_cuda_status(cudaFree(gpu_csrA.col_idx));
+  check_cuda_status(cudaFree(gpu_csrA.val));
 }
 
 //------------------------------------------------------------------------------
@@ -245,12 +259,12 @@ void create_int_vector(const mxArray *mxA, intVct *vctA)
 
   if (mxIsSparse(mxA) || mxGetN(mxA) != 1 || vctA->n == 0 ||
       mxIsComplex(mxA) ||!mxIsDouble(mxA)) {
-    mexErrMsgTxt("mexRF: Bad vector.");
+    mexErrMsgTxt("mexRF: Vector dimensions and type must agree.");
   }
 
   pr = mxGetPr(mxA);
 
-  // Cast 'double array to 'int'.
+  // Cast 'double' array to 'int'.
   vctA->val = new int[vctA->n];
   for (int j = 0; j < vctA->n; j++) {
     vctA->val[j] = (int) pr[j];
@@ -262,9 +276,10 @@ void create_int_vector(const mxArray *mxA, intVct *vctA)
 void gpu_create_int_vector(intVct vctA, intVct *gpu_vctA)
 {
   gpu_vctA->n = vctA.n;
-  cudaMalloc((void **) &(gpu_vctA->val), sizeof(int) * gpu_vctA->n);
-  cudaMemcpy(gpu_vctA->val, vctA.val, sizeof(int) * gpu_vctA->n,
-             cudaMemcpyHostToDevice);
+  check_cuda_status(cudaMalloc((void **) &(gpu_vctA->val),
+                    sizeof(int) * gpu_vctA->n));
+  check_cuda_status(cudaMemcpy(gpu_vctA->val, vctA.val,
+                    sizeof(int) * gpu_vctA->n, cudaMemcpyHostToDevice));
 }
 
 //------------------------------------------------------------------------------
@@ -276,7 +291,7 @@ void delete_int_vector(intVct vctA)
 //------------------------------------------------------------------------------
 void gpu_delete_int_vector(intVct gpu_vctA)
 {
-  cudaFree(gpu_vctA.val);
+  check_cuda_status(cudaFree(gpu_vctA.val));
 }
 
 //------------------------------------------------------------------------------
@@ -289,19 +304,20 @@ void gpu_create_double_vector(const mxArray *mxA, doubleVct *gpu_vctA)
 
   if (mxIsSparse(mxA) || mxGetN(mxA) != 1 || vctA.n == 0 ||
       mxIsComplex(mxA) ||!mxIsDouble(mxA)) {
-    mexErrMsgTxt("mexRF: Bad vector.");
+    mexErrMsgTxt("mexRF: Vector dimensions and type must agree.");
   }
 
   gpu_vctA->n = vctA.n;
-  cudaMalloc((void **) &(gpu_vctA->val), sizeof(double) * gpu_vctA->n);
-  cudaMemcpy(gpu_vctA->val, vctA.val, sizeof(double) * gpu_vctA->n,
-             cudaMemcpyHostToDevice);
+  check_cuda_status(cudaMalloc((void **) &(gpu_vctA->val),
+                    sizeof(double) * gpu_vctA->n));
+  check_cuda_status(cudaMemcpy(gpu_vctA->val, vctA.val,
+                    sizeof(double) * gpu_vctA->n, cudaMemcpyHostToDevice));
 }
 
 //------------------------------------------------------------------------------
 void gpu_delete_double_vector(doubleVct gpu_vctA)
 {
-  cudaFree(gpu_vctA.val);
+  check_cuda_status(cudaFree(gpu_vctA.val));
 }
 
 //------------------------------------------------------------------------------
@@ -311,8 +327,8 @@ void mex_create_double_vector(doubleVct gpu_vctA, mxArray **mxA)
 
   *mxA = mxCreateNumericMatrix(gpu_vctA.n, 1, mxDOUBLE_CLASS, mxREAL);
   val = (double *) mxMalloc(sizeof(double) * gpu_vctA.n);
-  cudaMemcpy(val, gpu_vctA.val, sizeof(double) * gpu_vctA.n,
-             cudaMemcpyDeviceToHost);
+  check_cuda_status(cudaMemcpy(val, gpu_vctA.val,
+                    sizeof(double) * gpu_vctA.n, cudaMemcpyDeviceToHost));
 
   mxSetPr(*mxA, val);
 }
