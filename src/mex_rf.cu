@@ -17,7 +17,7 @@ typedef struct {
   int *row_idx;
   int *col_idx;
   double *val;
-} csrMtx;
+} cscMtx;
 
 typedef struct {
   int n;
@@ -31,12 +31,12 @@ typedef struct {
 
 void check_rf_status(cusolverStatus_t status);
 void check_cuda_status(cudaError_t status);
-void create_csr_matrix(const mxArray *mxA, csrMtx *csrA);
-void gpu_create_csr_matrix(csrMtx csrA, csrMtx *gpu_csrA);
-void delete_csr_matrix(csrMtx csrA);
-void gpu_delete_csr_matrix(csrMtx gpu_csrA);
-void create_int_vector(const mxArray *mxA, intVct *vctA);
-void gpu_create_int_vector(intVct vctA, intVct *gpu_vctA);
+void create_csc_matrix(const mxArray *mxA, cscMtx *cscA);
+void gpu_create_csc_matrix(cscMtx cscA, cscMtx *gpu_cscA);
+void delete_csc_matrix(cscMtx cscA);
+void gpu_delete_csc_matrix(cscMtx gpu_cscA);
+void create_idx_vector(const mxArray *mxA, intVct *vctA);
+void gpu_create_idx_vector(intVct vctA, intVct *gpu_vctA);
 void delete_int_vector(intVct vctA);
 void gpu_delete_int_vector(intVct gpu_vctA);
 void gpu_create_double_vector(const mxArray *mxA, doubleVct *vctA);
@@ -55,41 +55,41 @@ EXPORTED_FUNCTION void mexRfInitialize(const mxArray *mxA, const mxArray *mxL,
                                        const mxArray *mxU, const mxArray *mxP,
                                        const mxArray *mxQ)
 {
-  csrMtx csrA, csrL, csrU;
+  cscMtx cscA, cscL, cscU;
   intVct vctP, vctQ;
 
 #ifdef _WIN32
   mxInitGPU();
 #endif
 
-  create_csr_matrix(mxA, &csrA);
-  create_csr_matrix(mxL, &csrL);
-  create_csr_matrix(mxU, &csrU);
-  create_int_vector(mxP, &vctP);
-  create_int_vector(mxQ, &vctQ);
-  gpu_create_int_vector(vctP, &gpu_vctP);
-  gpu_create_int_vector(vctQ, &gpu_vctQ);
+  create_csc_matrix(mxA, &cscA);
+  create_csc_matrix(mxL, &cscL);
+  create_csc_matrix(mxU, &cscU);
+  create_idx_vector(mxP, &vctP);
+  create_idx_vector(mxQ, &vctQ);
+  gpu_create_idx_vector(vctP, &gpu_vctP);
+  gpu_create_idx_vector(vctQ, &gpu_vctQ);
 
   check_rf_status(cusolverRfCreate(&cuRFh));
   check_rf_status(cusolverRfSetMatrixFormat(cuRFh,
                   CUSOLVERRF_MATRIX_FORMAT_CSC,
                   CUSOLVERRF_UNIT_DIAGONAL_STORED_L));
-  //check_rf_status(cusolverRfSetResetValuesFastMode(cuRFh,
-  //                CUSOLVERRF_RESET_VALUES_FAST_MODE_ON));
+  check_rf_status(cusolverRfSetResetValuesFastMode(cuRFh,
+                  CUSOLVERRF_RESET_VALUES_FAST_MODE_ON));
 
-  check_rf_status(cusolverRfSetupHost(csrA.n,
-                  csrA.nnz, csrA.row_idx, csrA.col_idx, csrA.val,
-                  csrL.nnz, csrL.row_idx, csrL.col_idx, csrL.val,
-                  csrU.nnz, csrU.row_idx, csrU.col_idx, csrU.val,
+  check_rf_status(cusolverRfSetupHost(cscA.n,
+                  cscA.nnz, cscA.row_idx, cscA.col_idx, cscA.val,
+                  cscL.nnz, cscL.row_idx, cscL.col_idx, cscL.val,
+                  cscU.nnz, cscU.row_idx, cscU.col_idx, cscU.val,
                   vctP.val, vctQ.val, cuRFh));
   check_cuda_status(cudaDeviceSynchronize());
 
   check_rf_status(cusolverRfAnalyze(cuRFh));
   check_cuda_status(cudaDeviceSynchronize());
 
-  delete_csr_matrix(csrA);
-  delete_csr_matrix(csrL);
-  delete_csr_matrix(csrU);
+  delete_csc_matrix(cscA);
+  delete_csc_matrix(cscL);
+  delete_csc_matrix(cscU);
   delete_int_vector(vctP);
   delete_int_vector(vctQ);
 }
@@ -97,21 +97,21 @@ EXPORTED_FUNCTION void mexRfInitialize(const mxArray *mxA, const mxArray *mxL,
 //------------------------------------------------------------------------------
 EXPORTED_FUNCTION void mexRfRefactor(const mxArray *mxA)
 {
-  csrMtx csrA, gpu_csrA;
+  cscMtx cscA, gpu_cscA;
 
-  create_csr_matrix(mxA, &csrA);
-  gpu_create_csr_matrix(csrA, &gpu_csrA);
+  create_csc_matrix(mxA, &cscA);
+  gpu_create_csc_matrix(cscA, &gpu_cscA);
 
-  check_rf_status(cusolverRfResetValues(csrA.n, csrA.nnz,
-                  gpu_csrA.row_idx, gpu_csrA.col_idx, gpu_csrA.val,
+  check_rf_status(cusolverRfResetValues(cscA.n, cscA.nnz,
+                  gpu_cscA.row_idx, gpu_cscA.col_idx, gpu_cscA.val,
                   gpu_vctP.val, gpu_vctQ.val, cuRFh));
   check_cuda_status(cudaDeviceSynchronize());
 
   check_rf_status(cusolverRfRefactor(cuRFh));
   check_cuda_status(cudaDeviceSynchronize());
 
-  gpu_delete_csr_matrix(gpu_csrA);
-  delete_csr_matrix(csrA);
+  gpu_delete_csc_matrix(gpu_cscA);
+  delete_csc_matrix(cscA);
 }
 
 //------------------------------------------------------------------------------
@@ -184,74 +184,74 @@ void check_cuda_status(cudaError_t status)
 }
 
 //------------------------------------------------------------------------------
-void create_csr_matrix(const mxArray *mxA, csrMtx *csrA)
+void create_csc_matrix(const mxArray *mxA, cscMtx *cscA)
 {
   mwIndex *jc;
   mwIndex *ir;
 
-  csrA->n = mxGetM(mxA);
+  cscA->n = mxGetM(mxA);
   if (!mxIsSparse(mxA) || mxGetN(mxA) != mxGetM(mxA) ||
-      csrA->n == 0 || mxIsComplex(mxA) || !mxIsDouble(mxA)) {
+      cscA->n == 0 || mxIsComplex(mxA) || !mxIsDouble(mxA)) {
     mexErrMsgTxt("mexRF: Matrix dimensions and type must agree.");
   }
 
   jc = mxGetJc(mxA);
   ir = mxGetIr(mxA);
-  csrA->val = mxGetPr(mxA);
-  csrA->nnz = (int) jc[csrA->n];
+  cscA->val = mxGetPr(mxA);
+  cscA->nnz = (int) jc[cscA->n];
 
   // Cast array from 'mwIndex' to 'int'.
-  csrA->row_idx = new int[csrA->n + 1];
-  for (int j = 0; j <= csrA->n; j++) {
-    csrA->row_idx[j] = (int) jc[j];
+  cscA->row_idx = new int[cscA->n + 1];
+  for (int j = 0; j <= cscA->n; j++) {
+    cscA->row_idx[j] = (int) jc[j];
   }
 
   // Cast array from 'mwIndex' to 'int'.
-  csrA->col_idx = new int[csrA->nnz];
-  for (int j = 0; j < csrA->nnz; j++) {
-    csrA->col_idx[j] = (int) ir[j];
+  cscA->col_idx = new int[cscA->nnz];
+  for (int j = 0; j < cscA->nnz; j++) {
+    cscA->col_idx[j] = (int) ir[j];
   }
 }
 
 //------------------------------------------------------------------------------
-void gpu_create_csr_matrix(csrMtx csrA, csrMtx *gpu_csrA)
+void gpu_create_csc_matrix(cscMtx cscA, cscMtx *gpu_cscA)
 {
-  gpu_csrA->n = csrA.n;
-  gpu_csrA->nnz = csrA.nnz;
-  check_cuda_status(cudaMalloc((void **) &(gpu_csrA->row_idx),
-                    sizeof(int) * (gpu_csrA->n + 1)));
-  check_cuda_status(cudaMemcpy(gpu_csrA->row_idx, csrA.row_idx,
-                    sizeof(int) * (gpu_csrA->n + 1),
+  gpu_cscA->n = cscA.n;
+  gpu_cscA->nnz = cscA.nnz;
+  check_cuda_status(cudaMalloc((void **) &(gpu_cscA->row_idx),
+                    sizeof(int) * (gpu_cscA->n + 1)));
+  check_cuda_status(cudaMemcpy(gpu_cscA->row_idx, cscA.row_idx,
+                    sizeof(int) * (gpu_cscA->n + 1),
                     cudaMemcpyHostToDevice));
-  check_cuda_status(cudaMalloc((void **) &(gpu_csrA->col_idx),
-                    sizeof(int) * gpu_csrA->nnz));
-  check_cuda_status(cudaMemcpy(gpu_csrA->col_idx, csrA.col_idx,
-                    sizeof(int) * gpu_csrA->nnz,
+  check_cuda_status(cudaMalloc((void **) &(gpu_cscA->col_idx),
+                    sizeof(int) * gpu_cscA->nnz));
+  check_cuda_status(cudaMemcpy(gpu_cscA->col_idx, cscA.col_idx,
+                    sizeof(int) * gpu_cscA->nnz,
                     cudaMemcpyHostToDevice));
-  check_cuda_status(cudaMalloc((void **) &(gpu_csrA->val),
-                    sizeof(double) * gpu_csrA->nnz));
-  check_cuda_status(cudaMemcpy(gpu_csrA->val, csrA.val,
-                    sizeof(double) * gpu_csrA->nnz,
+  check_cuda_status(cudaMalloc((void **) &(gpu_cscA->val),
+                    sizeof(double) * gpu_cscA->nnz));
+  check_cuda_status(cudaMemcpy(gpu_cscA->val, cscA.val,
+                    sizeof(double) * gpu_cscA->nnz,
                     cudaMemcpyHostToDevice));
 }
 
 //------------------------------------------------------------------------------
-void delete_csr_matrix(csrMtx csrA)
+void delete_csc_matrix(cscMtx cscA)
 {
-  delete csrA.row_idx;
-  delete csrA.col_idx;
+  delete cscA.row_idx;
+  delete cscA.col_idx;
 }
 
 //------------------------------------------------------------------------------
-void gpu_delete_csr_matrix(csrMtx gpu_csrA)
+void gpu_delete_csc_matrix(cscMtx gpu_cscA)
 {
-  check_cuda_status(cudaFree(gpu_csrA.row_idx));
-  check_cuda_status(cudaFree(gpu_csrA.col_idx));
-  check_cuda_status(cudaFree(gpu_csrA.val));
+  check_cuda_status(cudaFree(gpu_cscA.row_idx));
+  check_cuda_status(cudaFree(gpu_cscA.col_idx));
+  check_cuda_status(cudaFree(gpu_cscA.val));
 }
 
 //------------------------------------------------------------------------------
-void create_int_vector(const mxArray *mxA, intVct *vctA)
+void create_idx_vector(const mxArray *mxA, intVct *vctA)
 {
   double *pr;
 
@@ -267,13 +267,14 @@ void create_int_vector(const mxArray *mxA, intVct *vctA)
   // Cast 'double' array to 'int'.
   vctA->val = new int[vctA->n];
   for (int j = 0; j < vctA->n; j++) {
-    vctA->val[j] = (int) pr[j];
+    // Decrease by one for zero-based indexing.
+    vctA->val[j] = (int) --pr[j];
   }
 
 }
 
 //------------------------------------------------------------------------------
-void gpu_create_int_vector(intVct vctA, intVct *gpu_vctA)
+void gpu_create_idx_vector(intVct vctA, intVct *gpu_vctA)
 {
   gpu_vctA->n = vctA.n;
   check_cuda_status(cudaMalloc((void **) &(gpu_vctA->val),
